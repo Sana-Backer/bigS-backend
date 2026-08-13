@@ -7,6 +7,7 @@ import os
 from pathlib import Path
 from datetime import timedelta
 from dotenv import load_dotenv
+from corsheaders.defaults import default_headers
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 
@@ -170,6 +171,10 @@ CORS_ALLOW_ALL_ORIGINS = DEBUG
 CORS_ALLOWED_ORIGINS = os.environ.get(
     "CORS_ALLOWED_ORIGINS", "http://localhost:3000 http://127.0.0.1:3000"
 ).split()
+
+CORS_ALLOW_HEADERS = list(default_headers) + [
+    "x-guest-token",
+]
 
 # ---------------------------------------------------------------------------
 # Logging
