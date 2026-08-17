@@ -9,14 +9,28 @@ from .models import Order, OrderItem, OrderStatusHistory
 
 
 class OrderItemSerializer(serializers.ModelSerializer):
+    image = serializers.SerializerMethodField()
+
     class Meta:
         model = OrderItem
         fields = [
             "id", "product", "variant",
             "product_name", "variant_name", "sku",
-            "unit_price", "quantity", "total_price",
+            "unit_price", "quantity", "total_price", "image"
         ]
         read_only_fields = fields
+
+    def get_image(self, obj):
+        img = None
+        if obj.variant:
+            img = obj.variant.images.order_by("sort_order").first()
+        if not img and obj.product:
+            img = obj.product.images.order_by("sort_order").first()
+        
+        if img:
+            request = self.context.get("request")
+            return request.build_absolute_uri(img.image.url) if request else img.image.url
+        return None
 
 
 class OrderStatusHistorySerializer(serializers.ModelSerializer):

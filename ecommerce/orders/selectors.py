@@ -33,6 +33,18 @@ def get_order_for_owner(order_id, user=None, guest_session=None):
         raise OrderNotFound()
 
 
+def get_order_by_number_for_owner(order_number, user=None, guest_session=None):
+    qs = get_order_queryset()
+    if user is not None:
+        qs = qs.filter(user=user)
+    else:
+        qs = qs.filter(guest_session=guest_session)
+    try:
+        return qs.get(order_number=order_number)
+    except Order.DoesNotExist:
+        raise OrderNotFound()
+
+
 def get_orders_for_owner(user=None, guest_session=None):
     qs = get_order_queryset()
     if user is not None:

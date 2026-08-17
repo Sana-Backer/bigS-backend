@@ -13,6 +13,7 @@ urlpatterns = [
     # Customer-facing
     path("orders/", views.OrderListView.as_view(), name="order-list"),
     path("orders/<uuid:id>/", views.OrderDetailView.as_view(), name="order-detail"),
+    path("orders/by-number/<str:order_number>/", views.OrderByNumberView.as_view(), name="order-by-number"),
     path("orders/<uuid:id>/cancel/", views.OrderCancelView.as_view(), name="order-cancel"),
 
     # Admin

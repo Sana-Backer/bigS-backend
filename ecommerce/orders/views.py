@@ -61,7 +61,18 @@ class OrderDetailView(APIView):
     def get(self, request, id):
         user, guest_session = cart_selectors.resolve_owner(request)
         order = selectors.get_order_for_owner(id, user=user, guest_session=guest_session)
-        return ok(OrderSerializer(order).data, "Order retrieved successfully.")
+        return ok(OrderSerializer(order, context={"request": request}).data, "Order retrieved successfully.")
+
+
+class OrderByNumberView(APIView):
+    """GET /api/orders/by-number/<str:order_number>/"""
+
+    permission_classes = [IsAuthenticatedOrGuest]
+
+    def get(self, request, order_number):
+        user, guest_session = cart_selectors.resolve_owner(request)
+        order = selectors.get_order_by_number_for_owner(order_number, user=user, guest_session=guest_session)
+        return ok(OrderSerializer(order, context={"request": request}).data, "Order retrieved successfully.")
 
 
 class OrderCancelView(APIView):
@@ -80,7 +91,7 @@ class OrderCancelView(APIView):
             changed_by=user,
             reason=serializer.validated_data.get("reason") or "Cancelled by customer.",
         )
-        return ok(OrderSerializer(order).data, "Order cancelled successfully.")
+        return ok(OrderSerializer(order, context={"request": request}).data, "Order cancelled successfully.")
 
 
 # ---------------------------------------------------------------------------
@@ -102,7 +113,7 @@ class AdminOrderDetailView(APIView):
 
     def get(self, request, id):
         order = selectors.get_order_for_admin(id)
-        return ok(OrderSerializer(order).data)
+        return ok(OrderSerializer(order, context={"request": request}).data)
 
 
 class AdminOrderStatusUpdateView(APIView):
@@ -120,7 +131,7 @@ class AdminOrderStatusUpdateView(APIView):
             changed_by=request.user,
             reason=serializer.validated_data.get("reason", ""),
         )
-        return ok(OrderSerializer(order).data, "Order status updated.")
+        return ok(OrderSerializer(order, context={"request": request}).data, "Order status updated.")
 
 
 class AdminOrderPaymentStatusUpdateView(APIView):
@@ -138,7 +149,7 @@ class AdminOrderPaymentStatusUpdateView(APIView):
             changed_by=request.user,
             reason=serializer.validated_data.get("reason", ""),
         )
-        return ok(OrderSerializer(order).data, "Payment status updated.")
+        return ok(OrderSerializer(order, context={"request": request}).data, "Payment status updated.")
 
 
 class AdminOrderFulfillmentStatusUpdateView(APIView):
@@ -156,7 +167,7 @@ class AdminOrderFulfillmentStatusUpdateView(APIView):
             changed_by=request.user,
             reason=serializer.validated_data.get("reason", ""),
         )
-        return ok(OrderSerializer(order).data, "Fulfillment status updated.")
+        return ok(OrderSerializer(order, context={"request": request}).data, "Fulfillment status updated.")
 
 
 class AdminOrderCancelView(APIView):
@@ -173,4 +184,4 @@ class AdminOrderCancelView(APIView):
             changed_by=request.user,
             reason=serializer.validated_data.get("reason") or "Cancelled by admin.",
         )
-        return ok(OrderSerializer(order).data, "Order cancelled successfully.")
+        return ok(OrderSerializer(order, context={"request": request}).data, "Order cancelled successfully.")
