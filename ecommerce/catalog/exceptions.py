@@ -36,10 +36,13 @@ def custom_exception_handler(exc, context):
 
         # Not found (404)
         if status_code == status.HTTP_404_NOT_FOUND:
+            message = "Resource not found."
+            if isinstance(response.data, dict) and "detail" in response.data:
+                message = str(response.data["detail"])
             return Response(
                 {
                     "status": "error",
-                    "message": "Resource not found.",
+                    "message": message,
                 },
                 status=status_code,
             )
