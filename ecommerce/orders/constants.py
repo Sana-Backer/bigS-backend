@@ -22,6 +22,9 @@ class OrderStatus(models.TextChoices):
     REFUNDED = "refunded", "Refunded"
     PARTIALLY_REFUNDED = "partially_refunded", "Partially Refunded"
 
+class PaymentMethod(models.TextChoices):
+    COD = "cod", "Cash on Delivery"
+    RAZORPAY = "razorpay", "Razorpay"
 
 class PaymentStatus(models.TextChoices):
     PENDING = "pending", "Pending"
