@@ -39,6 +39,7 @@ INSTALLED_APPS = [
     "orders.apps.OrdersConfig",
     "checkout.apps.CheckoutConfig",
     "payments.apps.PaymentsConfig",
+    "shipping.apps.ShippingConfig",
 ]
 
 MIDDLEWARE = [
@@ -195,3 +196,11 @@ LOGGING = {
         "users":   {"handlers": ["console"], "level": "DEBUG" if DEBUG else "INFO", "propagate": False},
     },
 }
+
+SHIPROCKET_EMAIL = os.environ.get("SHIPROCKET_EMAIL", "")
+SHIPROCKET_PASSWORD = os.environ.get("SHIPROCKET_PASSWORD", "")
+SHIPROCKET_WEBHOOK_SECRET = os.environ.get("SHIPROCKET_WEBHOOK_SECRET", "")
+SHIPROCKET_BASE_URL = os.environ.get("SHIPROCKET_BASE_URL", "https://apiv2.shiprocket.in/v1/external")
+
+SHIPROCKET_PICKUP_LOCATION = "Kochi Warehouse"
+SHIPROCKET_PICKUP_POSTCODE = os.environ.get("SHIPROCKET_PICKUP_POSTCODE", "682001")

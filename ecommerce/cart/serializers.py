@@ -14,6 +14,14 @@ class CartItemProductSerializer(serializers.Serializer):
     name = serializers.CharField()
     slug = serializers.SlugField()
     sku = serializers.CharField()
+    primary_image = serializers.SerializerMethodField()
+
+    def get_primary_image(self, obj):
+        img = obj.images.order_by("sort_order").first()
+        if img:
+            request = self.context.get("request")
+            return request.build_absolute_uri(img.image.url) if request else img.image.url
+        return None
 
 
 class CartItemVariantSerializer(serializers.Serializer):
@@ -22,6 +30,14 @@ class CartItemVariantSerializer(serializers.Serializer):
     sku = serializers.CharField()
     attributes = serializers.JSONField()
     stock_quantity = serializers.IntegerField()
+    primary_image = serializers.SerializerMethodField()
+
+    def get_primary_image(self, obj):
+        img = obj.images.order_by("sort_order").first()
+        if img:
+            request = self.context.get("request")
+            return request.build_absolute_uri(img.image.url) if request else img.image.url
+        return None
 
 
 class CartItemSerializer(serializers.ModelSerializer):

@@ -122,16 +122,68 @@ class AdminOrderStatusUpdateView(APIView):
     permission_classes = [IsAuthenticated, IsManagerOrAdmin]
 
     def patch(self, request, id):
+        print("\n========== ADMIN ORDER STATUS UPDATE ==========")
+        print("Order ID:", id)
+        print("Request data:", request.data)
+        print("Admin user:", request.user)
+
         serializer = OrderStatusUpdateSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
+
+        print("New status:", serializer.validated_data["status"])
+
         order = selectors.get_order_for_admin(id)
+
+        print("\n========== ORDER INFORMATION ==========")
+        print("Order object:", order)
+        print("Order ID:", order.id)
+        print("Order number:", order.order_number)
+        print("Customer email:", order.customer_email)
+        print("Customer phone:", order.customer_phone)
+        print("Status:", order.status)
+        print("Payment status:", order.payment_status)
+        print("Fulfillment status:", order.fulfillment_status)
+        print("Subtotal:", order.subtotal)
+        print("Discount:", order.discount_amount)
+        print("Shipping amount:", order.shipping_amount)
+        print("Tax:", order.tax_amount)
+        print("Total:", order.total_amount)
+        print("Currency:", order.currency)
+
+        print("\n========== SHIPPING ADDRESS ==========")
+        print("Shipping address:", order.shipping_address_snapshot)
+
+        print("\n========== BILLING ADDRESS ==========")
+        print("Billing address:", order.billing_address_snapshot)
+
+        print("\n========== ORDER ITEMS ==========")
+        try:
+            items = order.items.all()
+            print("Items queryset:", items)
+
+            for item in items:
+                print("Item:", item)
+                print("Product:", item.product)
+                print("Quantity:", item.quantity)
+                print("Price:", item.unit_price)
+
+        except Exception as e:
+            print("!!! ERROR READING ORDER ITEMS !!!")
+            print("Error:", repr(e))
+
+        print("========================================\n")
+
         order = services.change_order_status(
             order,
             serializer.validated_data["status"],
             changed_by=request.user,
             reason=serializer.validated_data.get("reason", ""),
         )
-        return ok(OrderSerializer(order, context={"request": request}).data, "Order status updated.")
+
+        return ok(
+            OrderSerializer(order, context={"request": request}).data,
+            "Order status updated."
+        )
 
 
 class AdminOrderPaymentStatusUpdateView(APIView):
