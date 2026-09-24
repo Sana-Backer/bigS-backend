@@ -32,8 +32,7 @@ from catalog.models import Product, ProductVariant
 from coupons.models import Coupon
 from users.models import GuestSession, User
 
-from .constants import FulfillmentStatus, OrderStatus, PaymentStatus
-
+from .constants import FulfillmentStatus, OrderStatus, PaymentMethod, PaymentStatus
 
 class TimeStampedModel(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
@@ -81,6 +80,9 @@ class Order(TimeStampedModel):
     )
     payment_status = models.CharField(
         max_length=30, choices=PaymentStatus.choices, default=PaymentStatus.PENDING, db_index=True
+    )
+    payment_method = models.CharField(
+        max_length=10, choices=PaymentMethod.choices, default=PaymentMethod.RAZORPAY, db_index=True,
     )
     fulfillment_status = models.CharField(
         max_length=30, choices=FulfillmentStatus.choices, default=FulfillmentStatus.UNFULFILLED, db_index=True

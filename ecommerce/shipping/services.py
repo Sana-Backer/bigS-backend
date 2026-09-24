@@ -42,7 +42,7 @@ from django.conf import settings
 from django.db import transaction
 from django.utils import timezone
 
-from orders.constants import FulfillmentStatus, OrderStatus, PaymentStatus
+from orders.constants import FulfillmentStatus, OrderStatus, PaymentMethod, PaymentStatus
 from orders.exceptions import InvalidStatusTransition
 from orders import services as orders_services
 from orders.models import Order
@@ -406,7 +406,7 @@ def create_shipment_for_order(order: Order, *, created_by=None, pickup_location:
     if Shipment.objects.filter(order=order).exists():
         raise DuplicateShipment()
 
-    if order.payment_status != PaymentStatus.PAID:
+    if order.payment_method == PaymentMethod.RAZORPAY and order.payment_status != PaymentStatus.PAID:
         raise OrderNotPaid()
 
     if order.status not in SHIPPABLE_ORDER_STATUSES:

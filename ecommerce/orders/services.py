@@ -39,6 +39,7 @@ from .constants import (
     PAYMENT_STATUS_TRANSITIONS,
     FulfillmentStatus,
     OrderStatus,
+    PaymentMethod,
     PaymentStatus,
     is_transition_allowed,
 )
@@ -105,6 +106,7 @@ def create_order_from_cart(
     shipping_address,
     customer_email,
     customer_phone="",
+    payment_method=PaymentMethod.RAZORPAY,
     notes="",
 ):
     """
@@ -189,6 +191,7 @@ def create_order_from_cart(
         coupon_code=coupon.code if coupon else "",
         status=OrderStatus.PENDING,
         payment_status=PaymentStatus.PENDING,
+        payment_method=payment_method,
         fulfillment_status=FulfillmentStatus.UNFULFILLED,
         notes=notes,
     )

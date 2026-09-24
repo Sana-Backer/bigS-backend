@@ -278,6 +278,9 @@ class ProductDetailSerializer(serializers.ModelSerializer):
             "id", "name", "slug", "sku", "brand",
             "category",
             "description", "short_description",
+            "about_title", "about_heading",
+            "recommended_for", "good_to_know",
+            "ingredients_title", "ingredients", "usage", "faqs",
             "base_price", "sale_price", "effective_price", "discount_percentage",
             "is_featured", "is_active",
             "images", "variants",
@@ -311,6 +314,15 @@ class ProductCreateUpdateSerializer(serializers.ModelSerializer):
         "brand": "Botanica",
         "description": "Nourishing rose cream...",
         "short_description": "Hydrating daily face cream.",
+        "about_title": "ABOUT THE PRODUCT",
+        "about_heading": "A boost of anti-oxidant rich nourishing renewal for dull, dry and tired skin.",
+        "recommended_for": ["Dull Skin", "Hyper Pigmentation", "Uneven Skin Tone"],
+        "good_to_know": ["pH: 4.8", "Vegan, Cruelty-Free", "For All Skin-Types"],
+        "ingredients": "Aqua, Glycerin, Niacinamide...",
+        "usage": "Apply a small amount to clean, dry skin morning and night.",
+        "faqs": [
+            {"question": "Is this vegan?", "answer": "Yes, fully vegan and cruelty-free."}
+        ],
         "base_price": "15.99",
         "sale_price": "12.99",
         "is_featured": false,
@@ -323,6 +335,9 @@ class ProductCreateUpdateSerializer(serializers.ModelSerializer):
         fields = [
             "category", "name", "sku", "brand",
             "description", "short_description",
+            "about_title", "about_heading",
+            "recommended_for", "good_to_know",
+            "ingredients_title", "ingredients", "usage", "faqs",
             "base_price", "sale_price",
             "is_featured", "is_active",
         ]
@@ -344,6 +359,27 @@ class ProductCreateUpdateSerializer(serializers.ModelSerializer):
     def validate_category(self, value):
         if not value.is_active:
             raise serializers.ValidationError("Cannot assign product to an inactive category.")
+        return value
+
+    def _validate_string_list(self, value, field_name):
+        if not isinstance(value, list) or not all(isinstance(item, str) for item in value):
+            raise serializers.ValidationError(f"{field_name} must be a list of strings.")
+        return value
+
+    def validate_recommended_for(self, value):
+        return self._validate_string_list(value, "recommended_for")
+
+    def validate_good_to_know(self, value):
+        return self._validate_string_list(value, "good_to_know")
+
+    def validate_faqs(self, value):
+        if not isinstance(value, list) or not all(
+            isinstance(item, dict) and "question" in item and "answer" in item
+            for item in value
+        ):
+            raise serializers.ValidationError(
+                "faqs must be a list of objects with 'question' and 'answer' keys."
+            )
         return value
 
     def to_representation(self, instance):

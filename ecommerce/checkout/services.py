@@ -13,6 +13,7 @@ from django.shortcuts import get_object_or_404
 
 from cart.pricing import calculate_cart_totals, current_unit_price
 from coupons import services as coupon_services
+from orders.constants import PaymentMethod
 from orders import services as order_services
 from users.models import Address, GuestAddress
 
@@ -177,5 +178,6 @@ def create_order(*, user, guest_session, cart, data):
         shipping_address=shipping_address,
         customer_email=customer_email,
         customer_phone=customer_phone or "",
+        payment_method=data.get("payment_method") or PaymentMethod.RAZORPAY,
         notes=data.get("notes", ""),
     )

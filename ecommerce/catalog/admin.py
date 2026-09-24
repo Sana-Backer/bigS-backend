@@ -46,6 +46,36 @@ class ProductAdmin(admin.ModelAdmin):
     prepopulated_fields = {"slug": ("name",)}
     inlines = [ProductVariantInline, ProductImageInline]
     ordering = ["-created_at"]
+    fieldsets = (
+        (None, {
+            "fields": (
+                "category", "name", "slug", "sku", "brand",
+                "base_price", "sale_price",
+                "is_featured", "is_active",
+            ),
+        }),
+        ("About tab", {
+            "fields": (
+                "about_title", "about_heading",
+                "description", "short_description",
+                "recommended_for", "good_to_know",
+            ),
+            "description": (
+                "Powers the 'About' tab. 'recommended_for' and 'good_to_know' "
+                "are JSON lists of short bullet strings, e.g. "
+                '["Dull Skin", "Hyper Pigmentation"].'
+            ),
+        }),
+        ("Ingredients tab", {"fields": ("ingredients_title", "ingredients")}),
+        ("Usage tab", {"fields": ("usage",)}),
+        ("FAQ tab", {
+            "fields": ("faqs",),
+            "description": (
+                "JSON list of objects, e.g. "
+                '[{"question": "Is this vegan?", "answer": "Yes."}]'
+            ),
+        }),
+    )
 
 
 @admin.register(ProductVariant)

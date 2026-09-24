@@ -120,6 +120,65 @@ class Product(TimeStampedModel):
         max_digits=12, decimal_places=2, null=True, blank=True
     )
 
+    # ------------------------------------------------------------------
+    # Product detail page content (About / Ingredients / Usage / FAQ tabs)
+    # ------------------------------------------------------------------
+
+    about_title = models.CharField(
+        max_length=300,
+        blank=True,
+        help_text=(
+            "Small caption/overline shown directly above the About tab's "
+            "description, e.g. 'ABOUT THE PRODUCT'."
+        ),
+    )
+    about_heading = models.CharField(
+        max_length=500,
+        blank=True,
+        help_text=(
+            "Large heading statement for the product (shown in the page's "
+            "hero/summary section), e.g. 'A boost of anti-oxidant rich "
+            "nourishing renewal for dull, dry and tired skin.'"
+        ),
+    )
+    recommended_for = models.JSONField(
+        default=list,
+        blank=True,
+        help_text=(
+            "Bullet list shown under 'Recommended For', e.g. "
+            '["Dull Skin", "Hyper Pigmentation", "Uneven Skin Tone"]'
+        ),
+    )
+    good_to_know = models.JSONField(
+        default=list,
+        blank=True,
+        help_text=(
+            "Bullet list shown under 'Good To Know', e.g. "
+            '["pH: 4.8", "Vegan, Cruelty-Free", "For All Skin-Types"]'
+        ),
+    )
+    ingredients_title = models.CharField(
+        max_length=300,
+        blank=True,
+        help_text="Heading shown above the Ingredients tab's content.",
+    )
+    ingredients = models.TextField(
+        blank=True,
+        help_text="Content for the 'Ingredients' tab on the product page.",
+    )
+    usage = models.TextField(
+        blank=True,
+        help_text="Content for the 'Usage' tab on the product page (how to use).",
+    )
+    faqs = models.JSONField(
+        default=list,
+        blank=True,
+        help_text=(
+            "Content for the 'FAQ' tab. List of objects, e.g. "
+            '[{"question": "Is this vegan?", "answer": "Yes, fully vegan."}]'
+        ),
+    )
+
     is_featured = models.BooleanField(default=False, db_index=True)
     is_active = models.BooleanField(default=True, db_index=True)
 
@@ -145,6 +204,28 @@ class Product(TimeStampedModel):
         if self.sale_price is not None and self.sale_price > self.base_price:
             raise ValidationError(
                 {"sale_price": "sale_price must be less than or equal to base_price."}
+            )
+
+        for field_name in ("recommended_for", "good_to_know"):
+            value = getattr(self, field_name)
+            if value in (None, ""):
+                setattr(self, field_name, [])
+                continue
+            if not isinstance(value, list) or not all(
+                isinstance(item, str) for item in value
+            ):
+                raise ValidationError(
+                    {field_name: f"{field_name} must be a list of strings."}
+                )
+
+        if self.faqs in (None, ""):
+            self.faqs = []
+        elif not isinstance(self.faqs, list) or not all(
+            isinstance(item, dict) and "question" in item and "answer" in item
+            for item in self.faqs
+        ):
+            raise ValidationError(
+                {"faqs": "faqs must be a list of objects with 'question' and 'answer' keys."}
             )
 
     def save(self, *args, **kwargs):

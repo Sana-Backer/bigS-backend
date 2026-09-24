@@ -3,6 +3,7 @@ checkout/serializers.py
 """
 
 from rest_framework import serializers
+from orders.constants import PaymentMethod
 
 
 class AddressInputSerializer(serializers.Serializer):
@@ -38,7 +39,7 @@ class CreateOrderSerializer(serializers.Serializer):
 
     guest_email = serializers.EmailField(required=False)
     guest_phone = serializers.CharField(max_length=17, required=False, allow_blank=True)
-
+    payment_method = serializers.CharField(required=False, default=PaymentMethod.RAZORPAY)
     notes = serializers.CharField(required=False, allow_blank=True, max_length=1000)
 
     def validate(self, attrs):
@@ -46,6 +47,12 @@ class CreateOrderSerializer(serializers.Serializer):
             raise serializers.ValidationError(
                 {"shipping_address": ["Provide either shipping_address_id or shipping_address."]}
             )
+        normalized = str(attrs.get("payment_method") or PaymentMethod.RAZORPAY).strip().lower()
+        if normalized not in PaymentMethod.values:
+            raise serializers.ValidationError(
+                {"payment_method": [f"'{attrs.get('payment_method')}' is not a valid payment method."]}
+            )
+        attrs["payment_method"] = normalized
         # Billing defaults to shipping if neither billing field is supplied —
         # enforced in the service layer, not here, since that's a business
         # rule rather than a shape validation.
