@@ -9,15 +9,17 @@ actual work happens in services.py, and results go out through the
 project's common.responses.ok() envelope.
 """
 
-from rest_framework.permissions import IsAuthenticated
+from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.views import APIView
-
+ 
 from catalog.pagination import StandardResultsPagination
-from common.responses import ok
+from common.responses import created, ok
 from users.permissions import IsManagerOrAdmin
-
-from . import services
+ 
+from . import selectors, services
 from .serializers import (
+    BannerCreateUpdateSerializer,
+    BannerSerializer,
     CustomerReportQuerySerializer,
     DashboardOverviewQuerySerializer,
     DateRangeQuerySerializer,
@@ -29,6 +31,7 @@ from .serializers import (
     RevenueOverviewQuerySerializer,
     SalesReportQuerySerializer,
 )
+
 
 
 class AdminReadOnlyView(APIView):
@@ -225,3 +228,88 @@ class AverageOrderValueView(AdminReadOnlyView):
         query.is_valid(raise_exception=True)
         data = services.get_average_order_value_trend(period=query.validated_data["period"])
         return ok(data, "Average order value trend retrieved successfully.")
+
+
+class BannerListCreateView(AdminReadOnlyView):
+    """
+    GET  /api/admin/banners/?placement=&is_active=  — paginated, newest first within ordering.
+    POST /api/admin/banners/                         — create a new banner.
+ 
+    Named AdminReadOnlyView above refers to the base class's original
+    read-only-reports purpose; this view itself also handles POST, so
+    it does not actually stay read-only — only the IsManagerOrAdmin gate
+    it provides is being reused here.
+    """
+ 
+    def get(self, request):
+        qs = selectors.get_banner_queryset()
+        placement = request.query_params.get("placement")
+        if placement:
+            qs = qs.filter(placement=placement)
+        is_active = request.query_params.get("is_active")
+        if is_active is not None:
+            qs = qs.filter(is_active=is_active.lower() in ("1", "true", "yes"))
+ 
+        paginator = StandardResultsPagination()
+        page = paginator.paginate_queryset(qs, request)
+        return paginator.get_paginated_response(
+            BannerSerializer(page, many=True, context={"request": request}).data
+        )
+ 
+    def post(self, request):
+        serializer = BannerCreateUpdateSerializer(data=request.data, context={"request": request})
+        serializer.is_valid(raise_exception=True)
+        banner = serializer.save()
+        return created(BannerSerializer(banner, context={"request": request}).data, "Banner created successfully.")
+ 
+ 
+class BannerDetailView(AdminReadOnlyView):
+    """
+    GET    /api/admin/banners/<uuid:id>/
+    PATCH  /api/admin/banners/<uuid:id>/
+    PUT    /api/admin/banners/<uuid:id>/
+    DELETE /api/admin/banners/<uuid:id>/
+    """
+ 
+    def get(self, request, id):
+        banner = selectors.get_banner_for_admin(id)
+        return ok(BannerSerializer(banner, context={"request": request}).data, "Banner retrieved successfully.")
+ 
+    def patch(self, request, id):
+        banner = selectors.get_banner_for_admin(id)
+        serializer = BannerCreateUpdateSerializer(
+            banner, data=request.data, partial=True, context={"request": request},
+        )
+        serializer.is_valid(raise_exception=True)
+        banner = serializer.save()
+        return ok(BannerSerializer(banner, context={"request": request}).data, "Banner updated successfully.")
+ 
+    def put(self, request, id):
+        banner = selectors.get_banner_for_admin(id)
+        serializer = BannerCreateUpdateSerializer(banner, data=request.data, context={"request": request})
+        serializer.is_valid(raise_exception=True)
+        banner = serializer.save()
+        return ok(BannerSerializer(banner, context={"request": request}).data, "Banner updated successfully.")
+ 
+    def delete(self, request, id):
+        banner = selectors.get_banner_for_admin(id)
+        banner.delete()
+        return ok({}, "Banner deleted successfully.")
+ 
+ 
+class PublicActiveBannersView(APIView):
+    """
+    GET /api/banners/?placement=home_hero
+ 
+    Public, read-only — the storefront's home screen calls this
+    directly (no auth). Only ever returns banners that are both
+    is_active and currently inside their start_at/end_at window; see
+    selectors.get_active_banners().
+    """
+ 
+    permission_classes = [AllowAny]
+ 
+    def get(self, request):
+        qs = selectors.get_active_banners(placement=request.query_params.get("placement"))
+        return ok(BannerSerializer(qs, many=True, context={"request": request}).data, "Banners retrieved successfully.")
+ 

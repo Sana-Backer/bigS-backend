@@ -86,6 +86,42 @@ def _hourly_buckets(now, hours=24):
         buckets.append((b_start, b_end, b_start.strftime("%H:00")))
     return buckets
 
+def _hourly_buckets_today(now):
+    """
+    Returns hourly buckets for the current calendar day only.
+    """
+
+    start = now.replace(
+        hour=0,
+        minute=0,
+        second=0,
+        microsecond=0,
+    )
+
+    current_hour = now.replace(
+        minute=0,
+        second=0,
+        microsecond=0,
+    )
+
+    buckets = []
+    cursor = start
+
+    while cursor <= current_hour:
+        b_start = cursor
+        b_end = cursor + timedelta(hours=1)
+
+        buckets.append(
+            (
+                b_start,
+                b_end,
+                b_start.strftime("%H:00"),
+            )
+        )
+
+        cursor += timedelta(hours=1)
+
+    return buckets
 
 def _daily_buckets(now, days=7):
     start = (now - timedelta(days=days - 1)).replace(hour=0, minute=0, second=0, microsecond=0)
@@ -114,8 +150,10 @@ def _monthly_buckets(now, months=12):
 
 
 def _buckets_for_period(period: str, now):
-    if period == "daily":
-        return _hourly_buckets(now, hours=24)
+    if period == "today":
+        return _hourly_buckets_today(now)
+    if period == "7d":
+        return _daily_buckets(now, days=7)
     if period == "weekly":
         return _daily_buckets(now, days=7)
     if period == "monthly":

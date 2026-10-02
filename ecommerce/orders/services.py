@@ -11,12 +11,16 @@ Reuse, not reinvention
   never re-derives money math, it just reads that dict.
 - Coupon validation/consumption: coupons.services.validate_coupon() and
   coupons.services.confirm_coupon_usage() are reused as-is.
-- Stock model: ProductVariant.stock_quantity is the ONLY inventory
-  field in this project (confirmed by inspecting catalog/models.py) —
-  there is no separate reservation/inventory app, so "reserve or
-  reduce stock" resolves to REDUCE stock_quantity at order-creation
-  time, inside the same locked transaction that creates the order.
-  Restoring it on cancellation is the exact inverse operation.
+- Stock model: ProductVariant.stock_quantity is the inventory field for
+  items sold WITH a variant. For items sold WITHOUT a variant,
+  Product.stock_quantity is the inventory field instead (see
+  catalog.models.Product.stock_quantity's own docstring: "Only used
+  while the product has no variants"). There is no separate
+  reservation/inventory app, so "reserve or reduce stock" resolves to
+  REDUCE stock_quantity (on whichever of the two rows applies) at
+  order-creation time, inside the same locked transaction that creates
+  the order. Restoring it on cancellation is the exact inverse
+  operation, applied to the same row the reduction came from.
 - Cart lifecycle: cart.services.ensure_not_empty()/clear_cart() are
   reused rather than reimplemented.
 """
@@ -29,7 +33,7 @@ from django.utils import timezone
 
 from cart import services as cart_services
 from cart.pricing import calculate_cart_totals
-from catalog.models import ProductVariant
+from catalog.models import Product, ProductVariant
 from coupons import services as coupon_services
 
 from .constants import (
@@ -129,9 +133,12 @@ def create_order_from_cart(
     # 2. Cart must not be empty.
     cart_services.ensure_not_empty(cart)
 
-    # 3. Lock every stock-relevant ProductVariant row up front, in a
-    #    stable (id) order, to avoid deadlocks between two concurrent
-    #    checkouts that share overlapping products.
+    # 3. Lock every stock-relevant row up front, in a stable (id) order,
+    #    to avoid deadlocks between two concurrent checkouts that share
+    #    overlapping products. Items WITH a variant lock the
+    #    ProductVariant row; items WITHOUT a variant lock the Product
+    #    row itself (Product.stock_quantity is the inventory field for
+    #    variant-less items — see catalog.models.Product's docstring).
     items_qs = cart.items.select_related("product", "variant").order_by("id")
     items = list(items_qs)
 
@@ -139,6 +146,12 @@ def create_order_from_cart(
     locked_variants = {
         str(v.id): v
         for v in ProductVariant.objects.select_for_update().filter(id__in=variant_ids)
+    }
+
+    product_ids_without_variant = sorted({str(i.product_id) for i in items if not i.variant_id})
+    locked_products = {
+        str(p.id): p
+        for p in Product.objects.select_for_update().filter(id__in=product_ids_without_variant)
     }
 
     # 4/5/6/7. Validate every product/variant is still active and has stock.
@@ -157,6 +170,14 @@ def create_order_from_cart(
                 raise InsufficientStock(
                     f"Only {variant.stock_quantity} unit(s) of '{item.product.name} "
                     f"({variant.name})' available."
+                )
+        else:
+            # Variant-less item — stock lives on the Product row itself.
+            product = locked_products.get(str(item.product_id))
+            if product is None or product.stock_quantity < item.quantity:
+                available = product.stock_quantity if product else 0
+                raise InsufficientStock(
+                    f"Only {available} unit(s) of '{item.product.name}' available."
                 )
 
     # 8. Recalculate prices + totals from the DB (never trust cart snapshot).
@@ -216,12 +237,17 @@ def create_order_from_cart(
 
     # 13. Address snapshots already created above as part of Order fields.
 
-    # 14. Reduce stock on the locked variant rows.
+    # 14. Reduce stock on the locked variant rows, or the Product row
+    #     itself for items that were added to cart without a variant.
     for item in items:
         if item.variant_id:
             variant = locked_variants[str(item.variant_id)]
             variant.stock_quantity -= item.quantity
             variant.save(update_fields=["stock_quantity", "updated_at"])
+        else:
+            product = locked_products[str(item.product_id)]
+            product.stock_quantity -= item.quantity
+            product.save(update_fields=["stock_quantity", "updated_at"])
 
     # 15. Initial status history record.
     OrderStatusHistory.objects.create(
@@ -328,17 +354,45 @@ def cancel_order(order: Order, changed_by=None, reason="Cancelled by customer.")
 
 
 def _restore_stock_for_order(order: Order):
-    """Adds each cancelled order item's quantity back to variant stock."""
-    items = list(order.items.select_related("variant").filter(variant__isnull=False))
-    variant_ids = [i.variant_id for i in items]
-    if not variant_ids:
+    """
+    Adds each cancelled order item's quantity back to stock — the
+    ProductVariant row for items that were ordered with a variant, or
+    the Product row itself for items that were ordered without one
+    (the exact inverse of the two branches in step 14 of
+    create_order_from_cart()).
+    """
+    items = list(order.items.select_related("product", "variant"))
+    if not items:
         return
-    locked = {
-        v.id: v for v in ProductVariant.objects.select_for_update().filter(id__in=variant_ids)
-    }
-    for item in items:
-        variant = locked.get(item.variant_id)
-        if variant is None:
-            continue  # variant itself was deleted from the catalog since — nothing to restore
-        variant.stock_quantity += item.quantity
-        variant.save(update_fields=["stock_quantity", "updated_at"])
+
+    # Variant-backed items.
+    variant_items = [i for i in items if i.variant_id]
+    if variant_items:
+        locked_variants = {
+            v.id: v
+            for v in ProductVariant.objects.select_for_update().filter(
+                id__in=[i.variant_id for i in variant_items]
+            )
+        }
+        for item in variant_items:
+            variant = locked_variants.get(item.variant_id)
+            if variant is None:
+                continue  # variant itself was deleted from the catalog since — nothing to restore
+            variant.stock_quantity += item.quantity
+            variant.save(update_fields=["stock_quantity", "updated_at"])
+
+    # Variant-less items — stock lives on the Product row itself.
+    product_items = [i for i in items if not i.variant_id and i.product_id]
+    if product_items:
+        locked_products = {
+            p.id: p
+            for p in Product.objects.select_for_update().filter(
+                id__in=[i.product_id for i in product_items]
+            )
+        }
+        for item in product_items:
+            product = locked_products.get(item.product_id)
+            if product is None:
+                continue  # product itself was deleted from the catalog since — nothing to restore
+            product.stock_quantity += item.quantity
+            product.save(update_fields=["stock_quantity", "updated_at"])

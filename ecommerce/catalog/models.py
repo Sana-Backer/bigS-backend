@@ -119,11 +119,30 @@ class Product(TimeStampedModel):
     sale_price = models.DecimalField(
         max_digits=12, decimal_places=2, null=True, blank=True
     )
-
-    # ------------------------------------------------------------------
-    # Product detail page content (About / Ingredients / Usage / FAQ tabs)
-    # ------------------------------------------------------------------
-
+    stock_quantity = models.PositiveIntegerField(
+    default=0,
+    help_text=(
+        "Stock for this product. Only used while the product has no "
+        "variants — once variants exist, stock is tracked per-variant "
+        "instead and this field is ignored."
+    ),
+    )
+    weight = models.DecimalField(
+        max_digits=8, decimal_places=3, null=True, blank=True,
+        help_text="Weight in kilograms. Used for shipping when this product has no variants."
+    )
+    length_cm = models.DecimalField(
+        max_digits=6, decimal_places=2, null=True, blank=True,
+        help_text="Packaged length in centimeters. Used for shipping when this product has no variants."
+    )
+    width_cm = models.DecimalField(
+        max_digits=6, decimal_places=2, null=True, blank=True,
+        help_text="Packaged width/breadth in centimeters. Used for shipping when this product has no variants."
+    )
+    height_cm = models.DecimalField(
+        max_digits=6, decimal_places=2, null=True, blank=True,
+        help_text="Packaged height in centimeters. Used for shipping when this product has no variants."
+    )
     about_title = models.CharField(
         max_length=300,
         blank=True,

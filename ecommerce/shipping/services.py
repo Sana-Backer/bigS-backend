@@ -36,6 +36,7 @@ Reuse, not reinvention
 
 import hashlib
 import json
+import re 
 from decimal import Decimal
 
 from django.conf import settings
@@ -140,9 +141,7 @@ def _compute_package(order: Order):
     configured default item weight is used.
     """
 
-    items = list(
-        order.items.select_related("variant")
-    )
+    items = list(order.items.select_related("variant", "product"))
 
     if not items:
         raise ValueError("Cannot create a Shiprocket shipment without order items.")
@@ -152,13 +151,10 @@ def _compute_package(order: Order):
     for item in items:
         unit_weight = None
 
-        if (
-            item.variant_id
-            and item.variant
-            and item.variant.weight
-        ):
+        if(item.variant_id and item.variant and item.variant.weight):
             unit_weight = Decimal(str(item.variant.weight))
-
+        elif item.product_id and item.product and item.product.weight:
+            unit_weight = Decimal(str(item.product.weight))
         if unit_weight is None:
             unit_weight = _default_item_weight_kg()
 
@@ -205,6 +201,10 @@ def _validate_shiprocket_address(
             f"{address_type} address is missing: "
             f"{', '.join(missing)}"
         )
+def _clean_phone(phone: str) -> str:
+    """Shiprocket expects a plain 10-digit number, no '+91' or spaces."""
+    digits = re.sub(r"\D", "", phone or "")
+    return digits[-10:] if len(digits) >= 10 else digits
 
 def _build_order_items_payload(order: Order):
     items = []
@@ -215,8 +215,8 @@ def _build_order_items_payload(order: Order):
             "sku": item.sku,
             "units": int(item.quantity),
             "selling_price": float(item.unit_price),
-            "discount": "",
-            "tax": "",
+            "discount": 0,
+            "tax": 0,
             "hsn": "",
         }
 
@@ -254,11 +254,6 @@ def _build_shiprocket_payload(
         fallback_phone=order.customer_phone,
     )
 
-    # If billing address was not separately stored,
-    # use shipping address as billing address.
-    if not billing:
-        billing = shipping
-
     billing_first, billing_last = _split_name(
         billing.get("full_name", "")
     )
@@ -275,6 +270,8 @@ def _build_shiprocket_payload(
         raise ValueError(
             "Cannot create Shiprocket order without order items."
         )
+
+    payment_method = "COD" if order.payment_method == PaymentMethod.COD else "Prepaid"
 
     payload = {
         # ---------------------------------------------------------
@@ -310,11 +307,7 @@ def _build_shiprocket_payload(
 
         "billing_email": order.customer_email or "",
 
-        "billing_phone": str(
-            billing.get("phone")
-            or order.customer_phone
-            or ""
-        ),
+        "billing_phone": _clean_phone(billing.get("phone") or order.customer_phone),
 
         # ---------------------------------------------------------
         # Shipping
@@ -358,11 +351,7 @@ def _build_shiprocket_payload(
 
         "shipping_email": order.customer_email or "",
 
-        "shipping_phone": str(
-            shipping.get("phone")
-            or order.customer_phone
-            or ""
-        ),
+        "shipping_phone": _clean_phone(shipping.get("phone") or order.customer_phone),
 
         # ---------------------------------------------------------
         # Products
@@ -372,15 +361,15 @@ def _build_shiprocket_payload(
         # ---------------------------------------------------------
         # Payment
         # ---------------------------------------------------------
-        "payment_method": "Prepaid",
+        "payment_method": payment_method,
 
         # ---------------------------------------------------------
         # Charges
         # ---------------------------------------------------------
-        "shipping_charges": 0,
+        "shipping_charges": float(order.shipping_amount or 0),
         "giftwrap_charges": 0,
         "transaction_charges": 0,
-        "total_discount": 0,
+        "total_discount": float(order.discount_amount or 0),
 
         "sub_total": float(order.subtotal),
 

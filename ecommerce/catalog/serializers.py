@@ -194,6 +194,54 @@ class ProductVariantCreateUpdateSerializer(serializers.ModelSerializer):
 
 
 # ---------------------------------------------------------------------------
+# Shared helper: variant-vs-product price/stock resolution
+# ---------------------------------------------------------------------------
+# A Product's own base_price/sale_price/stock_quantity are the fallback
+# used ONLY while it has no variants (see catalog.models.Product's field
+# docstrings). Once variants exist, the variant is authoritative — this
+# mirrors the exact same precedence cart.pricing.current_unit_price()
+# and orders.services.create_order_from_cart() already use for the
+# money that's actually charged, so catalog list/detail pages can never
+# show a price or stock state that disagrees with what checkout does.
+
+def _representative_variant(product):
+    """
+    The variant whose price/stock represents this product on list/detail
+    pages: the explicit default variant if one is marked, otherwise the
+    cheapest active variant, otherwise None (meaning: this product has no
+    variants — fall back to the Product's own fields).
+    """
+    active_variants = product.variants.filter(is_active=True)
+    return (
+        active_variants.filter(is_default=True).first()
+        or active_variants.order_by("price").first()
+    )
+
+
+def _product_effective_price(product) -> str:
+    variant = _representative_variant(product)
+    if variant is not None:
+        return str(variant.effective_price)
+    return str(product.effective_price)
+
+
+def _product_discount_percentage(product):
+    variant = _representative_variant(product)
+    if variant is not None:
+        if variant.sale_price:
+            discount = ((variant.price - variant.sale_price) / variant.price) * 100
+            return round(float(discount), 1)
+        return 0
+    return product.discount_percentage
+
+
+def _product_in_stock(product) -> bool:
+    if product.variants.exists():
+        return product.variants.filter(is_active=True, stock_quantity__gt=0).exists()
+    return product.stock_quantity > 0
+
+
+# ---------------------------------------------------------------------------
 # Product – List (lightweight)
 # ---------------------------------------------------------------------------
 
@@ -240,10 +288,10 @@ class ProductListSerializer(serializers.ModelSerializer):
                 "slug": obj.category.slug}
 
     def get_effective_price(self, obj):
-        return str(obj.effective_price)
+        return _product_effective_price(obj)
 
     def get_discount_percentage(self, obj):
-        return obj.discount_percentage
+        return _product_discount_percentage(obj)
 
     def get_primary_image(self, obj):
         img = obj.images.order_by("sort_order").first()
@@ -253,7 +301,7 @@ class ProductListSerializer(serializers.ModelSerializer):
         return None
 
     def get_in_stock(self, obj):
-        return obj.variants.filter(is_active=True, stock_quantity__gt=0).exists()
+        return _product_in_stock(obj)
 
 
 # ---------------------------------------------------------------------------
@@ -282,6 +330,7 @@ class ProductDetailSerializer(serializers.ModelSerializer):
             "recommended_for", "good_to_know",
             "ingredients_title", "ingredients", "usage", "faqs",
             "base_price", "sale_price", "effective_price", "discount_percentage",
+            "stock_quantity", "weight", "length_cm", "width_cm", "height_cm",
             "is_featured", "is_active",
             "images", "variants",
             "in_stock",
@@ -289,13 +338,13 @@ class ProductDetailSerializer(serializers.ModelSerializer):
         ]
 
     def get_effective_price(self, obj):
-        return str(obj.effective_price)
+        return _product_effective_price(obj)
 
     def get_discount_percentage(self, obj):
-        return obj.discount_percentage
+        return _product_discount_percentage(obj)
 
     def get_in_stock(self, obj):
-        return obj.variants.filter(is_active=True, stock_quantity__gt=0).exists()
+        return _product_in_stock(obj)
 
 
 # ---------------------------------------------------------------------------
@@ -325,9 +374,20 @@ class ProductCreateUpdateSerializer(serializers.ModelSerializer):
         ],
         "base_price": "15.99",
         "sale_price": "12.99",
+        "stock_quantity": 0,
+        "weight": "0.350",
+        "length_cm": "10.00",
+        "width_cm": "6.00",
+        "height_cm": "4.00",
         "is_featured": false,
         "is_active": true
     }
+
+    Note on stock_quantity/weight/length_cm/width_cm/height_cm: these are
+    only meaningful while the product has no variants (see
+    catalog.models.Product's field docstrings) — once variants exist,
+    each variant's own stock_quantity/weight is authoritative instead and
+    these Product-level fields are ignored by orders/shipping.
     """
 
     class Meta:
@@ -339,6 +399,7 @@ class ProductCreateUpdateSerializer(serializers.ModelSerializer):
             "recommended_for", "good_to_know",
             "ingredients_title", "ingredients", "usage", "faqs",
             "base_price", "sale_price",
+            "stock_quantity", "weight", "length_cm", "width_cm", "height_cm",
             "is_featured", "is_active",
         ]
 
