@@ -24,6 +24,7 @@ urlpatterns = [
     path("api/admin/dashboard/", include("dashboard.urls")),
     path("api/admin/reports/", include("dashboard.report_urls")),
     path("api/admin/analytics/", include("dashboard.analytics_urls")),
+    path("api/admin/inventory/", include("inventory.urls")),
 ]
 
 if settings.DEBUG:

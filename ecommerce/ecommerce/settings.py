@@ -41,6 +41,7 @@ INSTALLED_APPS = [
     "payments.apps.PaymentsConfig",
     "shipping.apps.ShippingConfig",
     "dashboard.apps.DashboardConfig",
+    "inventory.apps.InventoryConfig",
 ]
 
 MIDDLEWARE = [
@@ -207,3 +208,6 @@ SHIPROCKET_BASE_URL = os.environ.get("SHIPROCKET_BASE_URL", "https://apiv2.shipr
 SHIPROCKET_PICKUP_LOCATION = "Kochi Warehouse"
 SHIPROCKET_PICKUP_POSTCODE = os.environ.get("SHIPROCKET_PICKUP_POSTCODE", "682001")
 
+
+INVENTORY_DEFAULT_LOW_STOCK_THRESHOLD = 10
+INVENTORY_LOG_EXTERNAL_CHANGES = True

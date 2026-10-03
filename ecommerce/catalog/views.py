@@ -59,7 +59,8 @@ from .serializers import (
     ProductVariantSerializer, ProductVariantCreateUpdateSerializer,
     ProductImageSerializer, ProductImageCreateSerializer,
 )
-from .filters import ProductFilter
+from .filters import ProductFilter, ORDERING_MAP, annotate_pricing
+from django.db.models import Count, Min, Max
 
 
 # ---------------------------------------------------------------------------
@@ -198,14 +199,6 @@ class CategoryTreeView(APIView):
 # Product Views
 # ---------------------------------------------------------------------------
 
-PRODUCT_ORDERING_FIELDS = {
-    "price": "base_price",
-    "-price": "-base_price",
-    "created_at": "created_at",
-    "-created_at": "-created_at",
-}
-
-
 class ProductListCreateView(ListCreateAPIView):
     """
     GET  /api/products/  – paginated, filterable list
@@ -214,19 +207,19 @@ class ProductListCreateView(ListCreateAPIView):
     Query params:
       ?category=skin-care
       ?brand=Botanica
-      ?min_price=5&max_price=50
+      ?brand=Botanica,Lumina        (multiple allowed)
+      ?min_price=5&max_price=50     (on the price actually charged)
+      ?in_stock=true  ?on_sale=true  ?min_discount=20
       ?featured=true
       ?search=cream
-      ?ordering=-price
+      ?ordering=price_asc|price_desc|newest|oldest|name_asc|name_desc|discount|featured
       ?page=2&page_size=10
     """
 
     permission_classes = [IsAuthenticatedOrReadOnly]
     pagination_class = StandardResultsPagination
-    filter_backends = [DjangoFilterBackend, filters.OrderingFilter]
+    filter_backends = [DjangoFilterBackend]   # sorting handled by ProductFilter (?ordering=)
     filterset_class = ProductFilter
-    ordering_fields = ["base_price", "created_at"]
-    ordering = ["-created_at"]
 
     def get_queryset(self):
         qs = (
@@ -234,10 +227,7 @@ class ProductListCreateView(ListCreateAPIView):
             .select_related("category")
             .prefetch_related("images", "variants")
         )
-        ordering_param = self.request.query_params.get("ordering")
-        if ordering_param and ordering_param in PRODUCT_ORDERING_FIELDS:
-            qs = qs.order_by(PRODUCT_ORDERING_FIELDS[ordering_param])
-        return qs
+        return qs.order_by("-created_at")   # default; ?ordering= overrides
 
     def get_serializer_class(self):
         return ProductCreateUpdateSerializer if self.request.method == "POST" else ProductListSerializer
@@ -313,6 +303,65 @@ class ProductRetrieveUpdateDestroyView(RetrieveUpdateDestroyAPIView):
         )
 
 
+class ProductFilterOptionsView(APIView):
+    """
+    GET /api/products/filters/
+
+    Data to build the filter sidebar. Accepts the same query params as the
+    list endpoint, so counts reflect the current selection (brand/price
+    facets ignore their own filter so users can still widen it).
+    """
+
+    def get(self, request):
+        base = Product.objects.filter(is_active=True)
+
+        def scoped(exclude):
+            params = request.query_params.copy()
+            for k in exclude:
+                params.pop(k, None)
+            return ProductFilter(params, queryset=base).qs
+
+        brand_qs = scoped(["brand"])
+        brands = (
+            brand_qs.exclude(brand="").values("brand")
+            .annotate(count=Count("id", distinct=True)).order_by("brand")
+        )
+        price_qs = scoped(["min_price", "max_price"])
+        price = price_qs.aggregate(min=Min("effective_price_value"), max=Max("effective_price_value"))
+
+        cat_qs = scoped(["category"])
+        categories = (
+            cat_qs.values("category__id", "category__name", "category__slug")
+            .annotate(count=Count("id", distinct=True)).order_by("category__name")
+        )
+        current = ProductFilter(request.query_params, queryset=base).qs
+        return success_response({
+            "brands": [{"name": b["brand"], "count": b["count"]} for b in brands],
+            "categories": [
+                {"id": c["category__id"], "name": c["category__name"],
+                 "slug": c["category__slug"], "count": c["count"]} for c in categories
+            ],
+            "price_range": {
+                "min": str(price["min"]) if price["min"] is not None else None,
+                "max": str(price["max"]) if price["max"] is not None else None,
+            },
+            "availability": {
+                "in_stock": current.filter(in_stock_flag=True).count(),
+                "on_sale": scoped(["on_sale"]).filter(discount_pct__gt=0).count(),
+            },
+            "sort_options": [
+                {"value": "newest", "label": "Newest"},
+                {"value": "price_asc", "label": "Price: Low to High"},
+                {"value": "price_desc", "label": "Price: High to Low"},
+                {"value": "discount", "label": "Biggest Discount"},
+                {"value": "name_asc", "label": "Name: A–Z"},
+                {"value": "name_desc", "label": "Name: Z–A"},
+                {"value": "featured", "label": "Featured"},
+            ],
+            "total": current.count(),
+        })
+
+
 class FeaturedProductsView(APIView):
     """GET /api/products/featured/"""
 
@@ -326,33 +375,20 @@ class FeaturedProductsView(APIView):
         return success_response(serializer.data)
 
 
-class ProductSearchView(APIView):
+class ProductSearchView(ProductListCreateView):
     """
-    GET /api/products/search/?search=<term>
+    GET /api/products/search/?search=<term>[&any other list filters]
 
-    Alias for the list endpoint search – returns matching products.
+    Same filters, sorting and pagination as the list endpoint, but `search`
+    is required.
     """
 
-    def get(self, request):
-        term = request.query_params.get("search", "").strip()
-        if not term:
+    http_method_names = ["get", "head", "options"]
+
+    def list(self, request, *args, **kwargs):
+        if not request.query_params.get("search", "").strip():
             return error_response("Query param `search` is required.", status.HTTP_400_BAD_REQUEST)
-
-        from django.db.models import Q
-        qs = (
-            Product.objects.filter(is_active=True)
-            .filter(
-                Q(name__icontains=term)
-                | Q(description__icontains=term)
-                | Q(short_description__icontains=term)
-                | Q(brand__icontains=term)
-                | Q(sku__icontains=term)
-            )
-            .select_related("category")
-            .prefetch_related("images", "variants")
-        )
-        serializer = ProductListSerializer(qs, many=True, context={"request": request})
-        return success_response(serializer.data)
+        return super().list(request, *args, **kwargs)
 
 
 class ProductsByCategoryView(APIView):

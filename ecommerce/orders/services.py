@@ -35,6 +35,8 @@ from cart import services as cart_services
 from cart.pricing import calculate_cart_totals
 from catalog.models import Product, ProductVariant
 from coupons import services as coupon_services
+from inventory import services as inventory_services
+from inventory.models import StockMovement
 
 from .constants import (
     CANCELLABLE_ORDER_STATUSES,
@@ -240,14 +242,12 @@ def create_order_from_cart(
     # 14. Reduce stock on the locked variant rows, or the Product row
     #     itself for items that were added to cart without a variant.
     for item in items:
-        if item.variant_id:
-            variant = locked_variants[str(item.variant_id)]
-            variant.stock_quantity -= item.quantity
-            variant.save(update_fields=["stock_quantity", "updated_at"])
-        else:
-            product = locked_products[str(item.product_id)]
-            product.stock_quantity -= item.quantity
-            product.save(update_fields=["stock_quantity", "updated_at"])
+        target = (locked_variants[str(item.variant_id)] if item.variant_id
+                  else locked_products[str(item.product_id)])
+        inventory_services.record_movement(
+            target, -item.quantity, StockMovement.Type.SALE,
+            reference=order.order_number, user=user,
+        )
 
     # 15. Initial status history record.
     OrderStatusHistory.objects.create(
@@ -378,8 +378,10 @@ def _restore_stock_for_order(order: Order):
             variant = locked_variants.get(item.variant_id)
             if variant is None:
                 continue  # variant itself was deleted from the catalog since — nothing to restore
-            variant.stock_quantity += item.quantity
-            variant.save(update_fields=["stock_quantity", "updated_at"])
+            inventory_services.record_movement(
+                variant, item.quantity, StockMovement.Type.ORDER_CANCEL,
+                reference=order.order_number,
+            )
 
     # Variant-less items — stock lives on the Product row itself.
     product_items = [i for i in items if not i.variant_id and i.product_id]
@@ -394,5 +396,7 @@ def _restore_stock_for_order(order: Order):
             product = locked_products.get(item.product_id)
             if product is None:
                 continue  # product itself was deleted from the catalog since — nothing to restore
-            product.stock_quantity += item.quantity
-            product.save(update_fields=["stock_quantity", "updated_at"])
+            inventory_services.record_movement(
+                product, item.quantity, StockMovement.Type.ORDER_CANCEL,
+                reference=order.order_number,
+            )

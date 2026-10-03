@@ -9,6 +9,7 @@ Mount this in your project urls.py:
 
 from django.urls import path
 from . import views
+from .views_import import CatalogImportView
 
 urlpatterns = [
     # ------------------------------------------------------------------
@@ -37,6 +38,11 @@ urlpatterns = [
         "products/featured/",
         views.FeaturedProductsView.as_view(),
         name="product-featured",
+    ),
+    path(
+        "products/filters/",
+        views.ProductFilterOptionsView.as_view(),
+        name="product-filter-options",
     ),
     path(
         "products/search/",
