@@ -53,7 +53,7 @@ REVENUE_PAYMENT_STATUSES = (
     PaymentStatus.REFUNDED,
 )
 
-RANGE_DAYS = {"7d": 7, "30d": 30, "90d": 90, "1y": 365}
+RANGE_DAYS = {"today": 1, "7d": 7, "30d": 30, "90d": 90, "1y": 365}
 
 
 # ---------------------------------------------------------------------------
@@ -150,14 +150,14 @@ def _monthly_buckets(now, months=12):
 
 
 def _buckets_for_period(period: str, now):
-    if period == "today":
+    if period in ("today", "daily"):
         return _hourly_buckets_today(now)
-    if period == "7d":
-        return _daily_buckets(now, days=7)
-    if period == "weekly":
+    if period in ("7d", "weekly"):
         return _daily_buckets(now, days=7)
     if period == "monthly":
         return _daily_buckets(now, days=30)
+    if period == "90d":
+        return _daily_buckets(now, days=90)
     if period == "yearly":
         return _monthly_buckets(now, months=12)
     raise InvalidPeriod()

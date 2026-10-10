@@ -10,7 +10,7 @@ that validate query parameters before a view calls into services.py.
 from rest_framework import serializers
 from .models import Banner
 
-PERIOD_CHOICES = ("today","7d","daily", "weekly", "monthly", "yearly")
+PERIOD_CHOICES = ("today", "7d", "daily", "weekly", "monthly", "yearly", "90d")
 
 
 class PeriodQuerySerializer(serializers.Serializer):
@@ -18,7 +18,7 @@ class PeriodQuerySerializer(serializers.Serializer):
 
 
 class DashboardOverviewQuerySerializer(serializers.Serializer):
-    range = serializers.ChoiceField(choices=("7d", "30d", "90d", "1y"), required=False, default="30d")
+    range = serializers.ChoiceField(choices=("today", "7d", "30d", "90d", "1y"), required=False, default="30d")
 
 
 class LimitQuerySerializer(serializers.Serializer):

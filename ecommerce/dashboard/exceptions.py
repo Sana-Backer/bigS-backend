@@ -17,7 +17,7 @@ from rest_framework.exceptions import APIException
 
 class InvalidPeriod(APIException):
     status_code = status.HTTP_400_BAD_REQUEST
-    default_detail = "Invalid period. Must be one of: daily, weekly, monthly, yearly."
+    default_detail = "Invalid period. Must be one of: today, daily, 7d, weekly, monthly, 90d, yearly."
     default_code = "invalid_period"
 
 

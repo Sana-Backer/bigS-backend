@@ -403,7 +403,12 @@ class ProductsByCategoryView(APIView):
         )
         serializer = ProductListSerializer(qs, many=True, context={"request": request})
         return success_response({
-            "category": {"id": category.id, "name": category.name, "slug": category.slug},
+            "category": {
+                "id": category.id, 
+                "name": category.name, 
+                "slug": category.slug,
+                "image": request.build_absolute_uri(category.image.url) if category.image else None
+            },
             "products": serializer.data,
         })
 

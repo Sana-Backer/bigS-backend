@@ -26,7 +26,7 @@ from django.db.models import (
     BooleanField, Case, DecimalField, Exists, ExpressionWrapper, F, OuterRef,
     Q, Subquery, Value, When,
 )
-from django.db.models.functions import Coalesce
+from django.db.models.functions import Coalesce, Lower
 
 from .models import Category, Product, ProductVariant
 
@@ -183,4 +183,12 @@ class ProductFilter(django_filters.FilterSet):
 
     def filter_ordering(self, qs, name, value):
         order = ORDERING_MAP.get(value.strip())
-        return qs.order_by(*order) if order else qs
+        if not order:
+            return qs
+        
+        # Make name sorting case-insensitive
+        if "name" in order[0] or "-name" in order[0]:
+            qs = qs.annotate(name_lower=Lower("name"))
+            order = [o.replace("name", "name_lower") for o in order]
+            
+        return qs.order_by(*order)
