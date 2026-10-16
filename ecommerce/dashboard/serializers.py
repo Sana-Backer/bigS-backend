@@ -8,7 +8,9 @@ that validate query parameters before a view calls into services.py.
 """
 
 from rest_framework import serializers
-from .models import Banner
+ 
+from catalog.models import Category
+from .models import Banner, BannerPlacement
 
 PERIOD_CHOICES = ("today", "7d", "daily", "weekly", "monthly", "yearly", "90d")
 
@@ -84,31 +86,11 @@ class InventoryReportQuerySerializer(serializers.Serializer):
     low_stock_threshold = serializers.IntegerField(required=False, default=10, min_value=0)
 
 class BannerSerializer(serializers.ModelSerializer):
-    """
-    Full read representation — used by both the admin CRUD surface and
-    the public storefront endpoint.
- 
-    Example response:
-    {
-        "id": "3fa85f64-...",
-        "title": "Autumn Sale",
-        "subtitle": "Up to 40% off",
-        "image": "http://example.com/media/banners/autumn.jpg",
-        "mobile_image": "http://example.com/media/banners/mobile/autumn.jpg",
-        "link_url": "https://example.com/sale",
-        "cta_text": "Shop Now",
-        "placement": "home_hero",
-        "sort_order": 0,
-        "is_active": true,
-        "is_currently_active": true,
-        "start_at": null,
-        "end_at": null,
-        "created_at": "2024-01-01T10:00:00Z",
-        "updated_at": "2024-01-01T10:00:00Z"
-    }
-    """
+    """Read representation — admin CRUD + public storefront endpoint."""
  
     is_currently_active = serializers.BooleanField(read_only=True)
+    category_name = serializers.CharField(source="category.name", read_only=True, default=None)
+    category_slug = serializers.CharField(source="category.slug", read_only=True, default=None)
  
     class Meta:
         model = Banner
@@ -116,34 +98,33 @@ class BannerSerializer(serializers.ModelSerializer):
             "id", "title", "subtitle",
             "image", "mobile_image",
             "link_url", "cta_text",
-            "placement", "sort_order",
+            "placement", "is_mobile",
+            "category", "category_name", "category_slug",
+            "sort_order",
             "is_active", "is_currently_active",
             "start_at", "end_at",
             "created_at", "updated_at",
         ]
         read_only_fields = ["id", "is_currently_active", "created_at", "updated_at"]
  
+
  
 class BannerCreateUpdateSerializer(serializers.ModelSerializer):
     """
-    Write serializer for POST/PATCH/PUT. `image` is required on create;
-    DRF's default ImageField behaviour already makes it optional on a
-    partial (PATCH) update since `partial=True` relaxes all required
-    fields, so a caller can PATCH just `is_active` or `sort_order`
-    without re-uploading the image.
- 
-    Example request body (POST /api/admin/banners/):
+    Write serializer. Example (shop-page banner for one category, phone version):
     {
-        "title": "Autumn Sale",
-        "subtitle": "Up to 40% off",
+        "title": "Beauty Care — phone",
         "image": <file>,
-        "link_url": "https://example.com/sale",
-        "cta_text": "Shop Now",
-        "placement": "home_hero",
-        "sort_order": 0,
+        "placement": "shop_category",
+        "category": "<category uuid>",
+        "is_mobile": true,
         "is_active": true
     }
     """
+ 
+    category = serializers.PrimaryKeyRelatedField(
+        queryset=Category.objects.filter(is_active=True), required=False, allow_null=True,
+    )
  
     class Meta:
         model = Banner
@@ -151,18 +132,33 @@ class BannerCreateUpdateSerializer(serializers.ModelSerializer):
             "title", "subtitle",
             "image", "mobile_image",
             "link_url", "cta_text",
-            "placement", "sort_order",
+            "placement", "is_mobile", "category", "sort_order",
             "is_active", "start_at", "end_at",
         ]
  
     def validate(self, data):
-        start_at = data.get("start_at", getattr(self.instance, "start_at", None))
-        end_at = data.get("end_at", getattr(self.instance, "end_at", None))
+        inst = self.instance
+        start_at = data.get("start_at", getattr(inst, "start_at", None))
+        end_at = data.get("end_at", getattr(inst, "end_at", None))
         if start_at and end_at and start_at >= end_at:
             raise serializers.ValidationError({"end_at": "end_at must be after start_at."})
+ 
+        placement = data.get("placement", getattr(inst, "placement", BannerPlacement.HOME_HERO))
+        category = data.get("category", getattr(inst, "category", None))
+        if category and placement != BannerPlacement.SHOP_CATEGORY:
+            raise serializers.ValidationError(
+                {"category": "A category can only be set for the 'shop_category' placement."}
+            )
         return data
  
     def to_representation(self, instance):
-        """Return the full read representation after create/update."""
         return BannerSerializer(instance, context=self.context).data
+ 
+ 
+class BannerPublicQuerySerializer(serializers.Serializer):
+    """Validates ?placement=&device=&category= on the public endpoint."""
+ 
+    placement = serializers.ChoiceField(choices=BannerPlacement.choices, required=False, allow_blank=True)
+    device = serializers.ChoiceField(choices=("mobile", "desktop"), required=False, allow_blank=True)
+    category = serializers.SlugField(required=False, allow_blank=True)
  
