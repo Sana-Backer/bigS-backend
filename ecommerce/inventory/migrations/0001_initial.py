@@ -67,7 +67,7 @@ class Migration(migrations.Migration):
                 ('variant', models.ForeignKey(blank=True, null=True, on_delete=django.db.models.deletion.PROTECT, related_name='+', to='catalog.productvariant')),
             ],
             options={
-                'constraints': [models.CheckConstraint(condition=models.Q(models.Q(('product__isnull', False), ('variant__isnull', True)), models.Q(('product__isnull', True), ('variant__isnull', False)), _connector='OR'), name='inv_poitem_exactly_one_target')],
+                'constraints': [models.CheckConstraint(check=models.Q(models.Q(('product__isnull', False), ('variant__isnull', True)), models.Q(('product__isnull', True), ('variant__isnull', False)), _connector='OR'), name='inv_poitem_exactly_one_target')],
             },
         ),
         migrations.CreateModel(
@@ -107,7 +107,7 @@ class Migration(migrations.Migration):
             options={
                 'verbose_name': 'Stock policy',
                 'verbose_name_plural': 'Stock policies',
-                'constraints': [models.CheckConstraint(condition=models.Q(models.Q(('product__isnull', False), ('variant__isnull', True)), models.Q(('product__isnull', True), ('variant__isnull', False)), _connector='OR'), name='inv_policy_exactly_one_target')],
+                'constraints': [models.CheckConstraint(check=models.Q(models.Q(('product__isnull', False), ('variant__isnull', True)), models.Q(('product__isnull', True), ('variant__isnull', False)), _connector='OR'), name='inv_policy_exactly_one_target')],
             },
         ),
     ]

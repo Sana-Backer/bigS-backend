@@ -92,8 +92,8 @@ class StockPolicy(TimeStampedModel):
         verbose_name_plural = "Stock policies"
         constraints = [
             models.CheckConstraint(
-                condition=(Q(product__isnull=False, variant__isnull=True)
-                           | Q(product__isnull=True, variant__isnull=False)),
+                check=(Q(product__isnull=False, variant__isnull=True)
+                       | Q(product__isnull=True, variant__isnull=False)),
                 name="inv_policy_exactly_one_target",
             ),
         ]
@@ -224,8 +224,8 @@ class PurchaseOrderItem(models.Model):
     class Meta:
         constraints = [
             models.CheckConstraint(
-                condition=(Q(product__isnull=False, variant__isnull=True)
-                           | Q(product__isnull=True, variant__isnull=False)),
+                check=(Q(product__isnull=False, variant__isnull=True)
+                       | Q(product__isnull=True, variant__isnull=False)),
                 name="inv_poitem_exactly_one_target",
             ),
         ]

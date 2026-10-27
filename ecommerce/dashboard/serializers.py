@@ -144,7 +144,10 @@ class BannerCreateUpdateSerializer(serializers.ModelSerializer):
         "is_active": true
     }
     """
- 
+
+    start_at = serializers.DateTimeField(required=False, allow_null=True)
+    end_at = serializers.DateTimeField(required=False, allow_null=True)
+
     class Meta:
         model = Banner
         fields = [
@@ -154,7 +157,19 @@ class BannerCreateUpdateSerializer(serializers.ModelSerializer):
             "placement", "sort_order",
             "is_active", "start_at", "end_at",
         ]
- 
+
+    def to_internal_value(self, data):
+        # Convert empty strings to None for nullable DateTimeFields (sent via FormData)
+        if hasattr(data, "copy"):
+            data = data.copy()
+        elif isinstance(data, dict):
+            data = data.copy()
+        if "start_at" in data and data["start_at"] in ("", "null", "undefined"):
+            data["start_at"] = None
+        if "end_at" in data and data["end_at"] in ("", "null", "undefined"):
+            data["end_at"] = None
+        return super().to_internal_value(data)
+
     def validate(self, data):
         start_at = data.get("start_at", getattr(self.instance, "start_at", None))
         end_at = data.get("end_at", getattr(self.instance, "end_at", None))

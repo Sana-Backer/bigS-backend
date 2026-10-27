@@ -76,6 +76,8 @@ def custom_exception_handler(exc, context):
         )
 
     # Unhandled exceptions → 500
+    import traceback
+    traceback.print_exc()
     return Response(
         {
             "status": "error",

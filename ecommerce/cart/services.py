@@ -54,6 +54,13 @@ def _validate_product_and_variant(product_id, variant_id):
             raise VariantUnavailable("This variant does not belong to the selected product.")
         if not variant.is_active:
             raise VariantUnavailable("This product variant is no longer available.")
+    else:
+        active_variants = product.variants.filter(is_active=True)
+        if active_variants.exists():
+            variant = (
+                active_variants.filter(is_default=True).first()
+                or active_variants.order_by("price").first()
+            )
 
     return product, variant
 

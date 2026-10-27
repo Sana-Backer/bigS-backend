@@ -92,5 +92,6 @@ urlpatterns = [
         views.ProductImageDestroyView.as_view(),
         name="image-delete",
     ),
-    path("api/catalog/import/", CatalogImportView.as_view()),
+    path("catalog/import/", CatalogImportView.as_view(), name="catalog-import"),
+    path("api/catalog/import/", CatalogImportView.as_view(), name="catalog-import-compat"),
 ]
