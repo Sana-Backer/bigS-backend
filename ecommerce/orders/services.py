@@ -25,6 +25,7 @@ Reuse, not reinvention
   reused rather than reimplemented.
 """
 
+import logging
 import secrets
 from decimal import Decimal
 
@@ -55,6 +56,8 @@ from .exceptions import (
     OrderNotCancellable,
 )
 from .models import Order, OrderItem, OrderStatusHistory
+
+logger = logging.getLogger(__name__)
 
 
 # ---------------------------------------------------------------------------
@@ -270,6 +273,56 @@ def create_order_from_cart(
 
 
 # ---------------------------------------------------------------------------
+# Auto-shipment hook
+# ---------------------------------------------------------------------------
+
+def _schedule_auto_shipment(order_id, changed_by=None):
+    """
+    Ask the shipping app to create the Shiprocket shipment for this order
+    — but only AFTER the surrounding DB transaction has committed
+    (transaction.on_commit), for two reasons:
+      1. the Shiprocket HTTP call must not run while this transaction is
+         still open (it would hold DB locks for the length of a network
+         call), and
+      2. if Shiprocket fails, the status change that triggered it must
+         stay saved, not roll back.
+
+    shipping.services is imported lazily because shipping already imports
+    orders.services; a top-level import here would be circular.
+    """
+    def _run():
+        try:
+            from shipping.services import auto_create_shipment_for_order
+            auto_create_shipment_for_order(order_id, created_by=changed_by)
+        except Exception:  # last-resort guard: a callback error must never reach the caller
+            logger.exception("Auto-shipment hook failed for order %s", order_id)
+
+    transaction.on_commit(_run)
+
+
+def _cancel_shipment_for_order(order: Order, changed_by=None, reason=""):
+    """
+    If this order has a live Shiprocket shipment, cancel it with Shiprocket.
+
+    Called from inside the cancelling transaction, as the LAST step, so
+    that if Shiprocket refuses (or the shipment is already out for
+    delivery) the exception propagates and the WHOLE cancellation rolls
+    back — we never end up with a cancelled order whose courier pickup is
+    still booked. No shipment (or one already cancelled) is a no-op.
+
+    shipping.services is imported lazily because shipping imports orders.
+    """
+    from shipping.constants import ShipmentStatus
+    from shipping.models import Shipment
+    from shipping.services import cancel_shipment
+
+    shipment = Shipment.objects.filter(order=order).first()
+    if shipment is None or shipment.status == ShipmentStatus.CANCELLED:
+        return
+    cancel_shipment(shipment, changed_by=changed_by, reason=reason)
+
+
+# ---------------------------------------------------------------------------
 # Status transitions
 # ---------------------------------------------------------------------------
 
@@ -286,6 +339,12 @@ def change_order_status(order: Order, new_status, changed_by=None, reason=""):
         order=order, status_type="order", old_status=old_status, new_status=new_status,
         changed_by=changed_by, reason=reason,
     )
+    # Order just became CONFIRMED -> create the Shiprocket shipment automatically.
+    if new_status == OrderStatus.CONFIRMED:
+        _schedule_auto_shipment(order.pk, changed_by)
+    # Order cancelled through this generic path -> don't leave a live shipment behind.
+    elif new_status == OrderStatus.CANCELLED:
+        _cancel_shipment_for_order(order, changed_by, reason or "Order cancelled.")
     return order
 
 
@@ -302,6 +361,11 @@ def change_payment_status(order: Order, new_status, changed_by=None, reason=""):
         order=order, status_type="payment", old_status=old_status, new_status=new_status,
         changed_by=changed_by, reason=reason,
     )
+    # A prepaid order that was confirmed BEFORE its payment landed was skipped
+    # by the auto-shipment hook; now that it's paid, try again (no-op if the
+    # order isn't confirmed yet or already has a shipment).
+    if new_status == PaymentStatus.PAID:
+        _schedule_auto_shipment(order.pk, changed_by)
     return order
 
 
@@ -350,6 +414,11 @@ def cancel_order(order: Order, changed_by=None, reason="Cancelled by customer.")
         order=order, status_type="fulfillment", old_status="",
         new_status=FulfillmentStatus.CANCELLED, changed_by=changed_by, reason=reason,
     )
+
+    # Last step, inside the same transaction: cancel the Shiprocket shipment
+    # (if any). If Shiprocket refuses, this raises and everything above —
+    # stock restore, status change, history — rolls back with it.
+    _cancel_shipment_for_order(order, changed_by, reason)
     return order
 
 

@@ -229,26 +229,27 @@ class AverageOrderValueView(AdminReadOnlyView):
         data = services.get_average_order_value_trend(period=query.validated_data["period"])
         return ok(data, "Average order value trend retrieved successfully.")
 
-
 class BannerListCreateView(AdminReadOnlyView):
     """
-    GET  /api/admin/banners/?placement=&is_active=  — paginated, newest first within ordering.
-    POST /api/admin/banners/                         — create a new banner.
- 
-    Named AdminReadOnlyView above refers to the base class's original
-    read-only-reports purpose; this view itself also handles POST, so
-    it does not actually stay read-only — only the IsManagerOrAdmin gate
-    it provides is being reused here.
+    GET  /api/admin/banners/?placement=&is_active=&is_mobile=&category=<slug>
+    POST /api/admin/banners/
     """
+ 
+    @staticmethod
+    def _truthy(value):
+        return value.lower() in ("1", "true", "yes")
  
     def get(self, request):
         qs = selectors.get_banner_queryset()
-        placement = request.query_params.get("placement")
-        if placement:
-            qs = qs.filter(placement=placement)
-        is_active = request.query_params.get("is_active")
-        if is_active is not None:
-            qs = qs.filter(is_active=is_active.lower() in ("1", "true", "yes"))
+        p = request.query_params
+        if p.get("placement"):
+            qs = qs.filter(placement=p["placement"])
+        if p.get("is_active") is not None:
+            qs = qs.filter(is_active=self._truthy(p["is_active"]))
+        if p.get("is_mobile") is not None:
+            qs = qs.filter(is_mobile=self._truthy(p["is_mobile"]))
+        if p.get("category"):
+            qs = qs.filter(category__slug=p["category"])
  
         paginator = StandardResultsPagination()
         page = paginator.paginate_queryset(qs, request)
@@ -261,7 +262,7 @@ class BannerListCreateView(AdminReadOnlyView):
         serializer.is_valid(raise_exception=True)
         banner = serializer.save()
         return created(BannerSerializer(banner, context={"request": request}).data, "Banner created successfully.")
- 
+
  
 class BannerDetailView(AdminReadOnlyView):
     """
@@ -299,17 +300,24 @@ class BannerDetailView(AdminReadOnlyView):
  
 class PublicActiveBannersView(APIView):
     """
-    GET /api/banners/?placement=home_hero
+    GET /api/banners/?placement=shop_category&category=<slug>&device=mobile|desktop
  
-    Public, read-only — the storefront's home screen calls this
-    directly (no auth). Only ever returns banners that are both
-    is_active and currently inside their start_at/end_at window; see
-    selectors.get_active_banners().
+    Public, no auth. Only banners that are active and inside their schedule.
+      - device   : mobile -> phone banners (falls back to desktop ones if none),
+                   desktop -> laptop banners, omitted -> all
+      - category : only used with placement=shop_category; falls back to the
+                   default shop banner (no category) if that category has none
     """
  
     permission_classes = [AllowAny]
  
     def get(self, request):
-        qs = selectors.get_active_banners(placement=request.query_params.get("placement"))
-        return ok(BannerSerializer(qs, many=True, context={"request": request}).data, "Banners retrieved successfully.")
- 
+        query = BannerPublicQuerySerializer(data=request.query_params)
+        query.is_valid(raise_exception=True)
+        v = query.validated_data
+        qs = selectors.get_active_banners(
+            placement=v.get("placement") or None,
+            device=v.get("device") or None,
+            category_slug=v.get("category") or None,
+        )
+        return ok(BannerSerializer(qs, many=True, context={"request": request}).data, "Banners retrieved successfully.")    

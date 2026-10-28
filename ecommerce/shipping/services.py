@@ -36,7 +36,8 @@ Reuse, not reinvention
 
 import hashlib
 import json
-import re 
+import logging
+import re
 from decimal import Decimal
 
 from django.conf import settings
@@ -46,7 +47,7 @@ from django.utils import timezone
 from orders.constants import FulfillmentStatus, OrderStatus, PaymentMethod, PaymentStatus
 from orders.exceptions import InvalidStatusTransition
 from orders import services as orders_services
-from orders.models import Order
+from orders.models import Order, OrderStatusHistory
 
 from .constants import (
     CANCELLABLE_SHIPMENT_STATUSES,
@@ -73,6 +74,8 @@ from .exceptions import (
 )
 from .models import Shipment, ShiprocketWebhookEvent
 from .providers import shiprocket_provider
+
+logger = logging.getLogger("shipping")
 
 # Orders may only have a shipment created for them from these statuses.
 SHIPPABLE_ORDER_STATUSES = {OrderStatus.CONFIRMED, OrderStatus.PROCESSING, OrderStatus.PACKED}
@@ -438,6 +441,95 @@ def create_shipment_for_order(order: Order, *, created_by=None, pickup_location:
     except InvalidStatusTransition:
         pass
 
+    return shipment
+
+
+# ---------------------------------------------------------------------------
+# Automatic shipment creation (fired when an order is CONFIRMED)
+# ---------------------------------------------------------------------------
+
+def _auto_shipment_enabled() -> bool:
+    """Kill switch: set SHIPROCKET_AUTO_CREATE_ON_CONFIRM = False to disable."""
+    return getattr(settings, "SHIPROCKET_AUTO_CREATE_ON_CONFIRM", True)
+
+
+def _record_auto_shipment_failure(order: Order, created_by, message: str):
+    """
+    Leave a visible trace on the order's audit trail so an admin can see
+    WHY no shipment exists (the full traceback goes to the "shipping"
+    logger). Never raises.
+    """
+    try:
+        OrderStatusHistory.objects.create(
+            order=order,
+            status_type="fulfillment",
+            old_status=order.fulfillment_status,
+            new_status=order.fulfillment_status,   # no change — note only
+            changed_by=created_by,
+            reason=f"Auto-shipment failed: {message}"[:500],
+        )
+    except Exception:  # pragma: no cover - best effort only
+        logger.exception("Could not record auto-shipment failure for order %s", order.pk)
+
+
+def auto_create_shipment_for_order(order_id, *, created_by=None):
+    """
+    Creates the Shiprocket order/shipment for `order_id` as soon as the
+    order becomes shippable, with NO manual "create shipment" click.
+
+    Called by orders.services right AFTER the status-change transaction
+    has committed (see orders.services._schedule_auto_shipment), so:
+      * the CONFIRMED status is already saved — whatever happens here can
+        never roll it back;
+      * this function therefore NEVER raises. Anything that goes wrong
+        (Shiprocket down, bad pincode, missing address, ...) is logged,
+        noted on the order's audit trail, and the admin can simply retry
+        with the existing POST /api/admin/orders/<id>/shipping/create/.
+
+    Quietly does nothing (returns None) when:
+      - auto-creation is switched off (SHIPROCKET_AUTO_CREATE_ON_CONFIRM),
+      - the order isn't in a shippable status,
+      - a shipment already exists (idempotent — safe to call repeatedly),
+      - it's a prepaid (Razorpay) order that hasn't been paid yet. The
+        payment-PAID transition fires this same function again, so the
+        shipment gets created the moment payment lands.
+
+    Returns the Shipment, or None if nothing was created.
+    """
+    if not _auto_shipment_enabled():
+        return None
+
+    order = Order.objects.filter(pk=order_id).first()
+    if order is None:
+        return None
+
+    if order.status not in SHIPPABLE_ORDER_STATUSES:
+        return None
+    if Shipment.objects.filter(order=order).exists():
+        return None
+    if order.payment_method == PaymentMethod.RAZORPAY and order.payment_status != PaymentStatus.PAID:
+        logger.info(
+            "Auto-shipment skipped for %s: prepaid order awaiting payment.", order.order_number
+        )
+        return None
+
+    try:
+        shipment = create_shipment_for_order(order, created_by=created_by)
+    except (DuplicateShipment, OrderNotPaid, OrderNotShippable):
+        # Lost a race with another trigger / a manual click — nothing to do.
+        return None
+    except Exception as exc:
+        message = str(getattr(exc, "detail", None) or exc)
+        logger.exception(
+            "Auto-shipment FAILED for order %s: %s", order.order_number, message
+        )
+        _record_auto_shipment_failure(order, created_by, message)
+        return None
+
+    logger.info(
+        "Auto-created Shiprocket shipment %s for order %s.",
+        shipment.shiprocket_shipment_id, order.order_number,
+    )
     return shipment
 
 
