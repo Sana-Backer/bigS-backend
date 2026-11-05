@@ -53,6 +53,30 @@ def _get_tokens(user):
     }
 
 
+def _validate_phone_number(value):
+    if not value or not str(value).strip():
+        return value
+    val = str(value).strip().replace(" ", "").replace("-", "")
+    if val.startswith("+91"):
+        rest = val[3:]
+        if not (rest.isdigit() and len(rest) == 10 and rest[0] in "6789"):
+            raise serializers.ValidationError("Please enter a valid 10-digit mobile number starting with 6-9 after +91.")
+        return val
+    if val.startswith("+"):
+        digits = val[1:]
+        if not (digits.isdigit() and 10 <= len(digits) <= 15):
+            raise serializers.ValidationError("International phone number must have 10 to 15 digits.")
+        return val
+    if val.startswith("91") and len(val) == 12:
+        rest = val[2:]
+        if not (rest.isdigit() and rest[0] in "6789"):
+            raise serializers.ValidationError("Please enter a valid 10-digit mobile number starting with 6-9.")
+        return f"+{val}"
+    if not (val.isdigit() and len(val) == 10 and val[0] in "6789"):
+        raise serializers.ValidationError("Please enter a valid 10-digit mobile number starting with 6, 7, 8, or 9.")
+    return val
+
+
 # ---------------------------------------------------------------------------
 # Registration
 # ---------------------------------------------------------------------------
@@ -84,6 +108,9 @@ class RegisterSerializer(serializers.Serializer):
         if User.objects.filter(email__iexact=value).exists():
             raise serializers.ValidationError("An account with this email already exists.")
         return value.lower()
+
+    def validate_phone(self, value):
+        return _validate_phone_number(value)
 
     def validate(self, data):
         if data["password"] != data["confirm_password"]:
@@ -242,6 +269,9 @@ class UserMeUpdateSerializer(serializers.ModelSerializer):
     class Meta:
         model = User
         fields = ["first_name", "last_name", "phone"]
+
+    def validate_phone(self, value):
+        return _validate_phone_number(value)
 
 
 # ---------------------------------------------------------------------------

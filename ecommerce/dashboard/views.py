@@ -19,6 +19,7 @@ from users.permissions import IsManagerOrAdmin
 from . import selectors, services
 from .serializers import (
     BannerCreateUpdateSerializer,
+    BannerPublicQuerySerializer,
     BannerSerializer,
     CustomerReportQuerySerializer,
     DashboardOverviewQuerySerializer,

@@ -17,6 +17,24 @@ from rest_framework import status
 
 
 def custom_exception_handler(exc, context):
+    from django.core.exceptions import ValidationError as DjangoValidationError
+
+    if isinstance(exc, DjangoValidationError):
+        if hasattr(exc, "message_dict"):
+            errors = exc.message_dict
+        elif hasattr(exc, "messages"):
+            errors = {"detail": exc.messages}
+        else:
+            errors = {"detail": str(exc)}
+        return Response(
+            {
+                "status": "error",
+                "message": "Validation failed.",
+                "errors": errors,
+            },
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
     # Call DRF's default handler first to get the standard response.
     response = exception_handler(exc, context)
 
@@ -77,11 +95,20 @@ def custom_exception_handler(exc, context):
 
     # Unhandled exceptions → 500
     import traceback
+    from django.conf import settings
+    trace = traceback.format_exc()
     traceback.print_exc()
+    try:
+        with open(settings.BASE_DIR / "server_exceptions.log", "a", encoding="utf-8") as f:
+            f.write(f"\n--- EXCEPTION: {exc} ---\n{trace}\n")
+    except Exception:
+        pass
+
     return Response(
         {
             "status": "error",
             "message": "An unexpected server error occurred.",
+            "detail": str(exc) if getattr(settings, "DEBUG", False) else None,
         },
         status=status.HTTP_500_INTERNAL_SERVER_ERROR,
     )

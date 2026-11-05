@@ -150,6 +150,30 @@ class BannerCreateUpdateSerializer(serializers.ModelSerializer):
             data["start_at"] = None
         if "end_at" in data and data["end_at"] in ("", "null", "undefined"):
             data["end_at"] = None
+        if "category" in data and data["category"] in ("", "null", "undefined", "None"):
+            data["category"] = None
+        return super().to_internal_value(data)
+    
+    def to_internal_value(self, data):
+        # Build a normal dictionary without deep-copying uploaded files.
+        if hasattr(data, "lists"):
+            data = {
+                key: values[0] if len(values) == 1 else values
+                for key, values in data.lists()
+            }
+        else:
+            data = dict(data)
+
+        # Normalize empty values.
+        if data.get("start_at") in ("", "null", "undefined"):
+            data["start_at"] = None
+
+        if data.get("end_at") in ("", "null", "undefined"):
+            data["end_at"] = None
+
+        if data.get("category") in ("", "null", "undefined", "None"):
+            data["category"] = None
+
         return super().to_internal_value(data)
 
     def validate(self, data):

@@ -9,7 +9,19 @@ list doesn't run one query per row.
 from django.db.models import Q
 from django.utils import timezone
 
+from .exceptions import BannerNotFound
 from .models import Banner, BannerPlacement
+
+
+def get_banner_queryset():
+    return Banner.objects.select_related("category").all()
+
+
+def get_banner_for_admin(banner_id):
+    try:
+        return get_banner_queryset().get(id=banner_id)
+    except Banner.DoesNotExist:
+        raise BannerNotFound()
 
 
 def _live(qs):
